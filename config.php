@@ -16,7 +16,7 @@
 // ---- Database settings (Railway env vars, with local fallbacks) ----
 define('DB_HOST', getenv('MYSQLHOST') ?: 'localhost');
 define('DB_PORT', getenv('MYSQLPORT') ?: '3306');
-define('DB_NAME', getenv('MYSQLDATABASE') ?: 'change_me_dbname');
+define('DB_NAME', getenv('MYSQLDATABASE') ?: (getenv('MYSQL_DATABASE') ?: 'change_me_dbname'));
 define('DB_USER', getenv('MYSQLUSER') ?: 'change_me_dbuser');
 define('DB_PASS', getenv('MYSQLPASSWORD') ?: 'change_me_dbpass');
 

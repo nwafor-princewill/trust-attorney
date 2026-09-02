@@ -6,11 +6,12 @@ RUN docker-php-ext-install pdo pdo_mysql \
     && apt-get install -y --no-install-recommends default-mysql-client \
     && rm -rf /var/lib/apt/lists/*
 
-# Apache config: allow .htaccess overrides (not required here, but harmless)
-# The mysql-client install above can pull in an extra MPM module — force prefork only.
-RUN a2enmod rewrite \
-    && a2dismod mpm_event mpm_worker 2>/dev/null; \
-    a2enmod mpm_prefork
+# Apache config: allow .htaccess overrides (not required here, but harmless).
+# Force-remove any non-prefork MPM symlinks directly (a2dismod alone wasn't
+# reliably clearing this on Railway's build) and enable only mpm_prefork.
+RUN rm -f /etc/apache2/mods-enabled/mpm_event.load /etc/apache2/mods-enabled/mpm_event.conf \
+           /etc/apache2/mods-enabled/mpm_worker.load /etc/apache2/mods-enabled/mpm_worker.conf \
+    && a2enmod mpm_prefork rewrite
 
 # App cod
 COPY . /var/www/html/
