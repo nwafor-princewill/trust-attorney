@@ -7,7 +7,10 @@ RUN docker-php-ext-install pdo pdo_mysql \
     && rm -rf /var/lib/apt/lists/*
 
 # Apache config: allow .htaccess overrides (not required here, but harmless)
-RUN a2enmod rewrite
+# The mysql-client install above can pull in an extra MPM module — force prefork only.
+RUN a2enmod rewrite \
+    && a2dismod mpm_event mpm_worker 2>/dev/null; \
+    a2enmod mpm_prefork
 
 # App code
 COPY . /var/www/html/
