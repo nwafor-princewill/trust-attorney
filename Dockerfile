@@ -1,28 +1,31 @@
 FROM php:8.2-apache
 
-# PDO MySQL extension (required by db.php) + mysql client (used by entrypoint.sh to auto-import schema.sql)
+# Install required PHP extensions & mysql client
 RUN docker-php-ext-install pdo pdo_mysql \
     && apt-get update \
     && apt-get install -y --no-install-recommends default-mysql-client \
     && rm -rf /var/lib/apt/lists/*
 
-# Apache config: allow .htaccess overrides (not required here, but harmless).
-# Force-remove any non-prefork MPM symlinks directly (a2dismod alone wasn't
-# reliably clearing this on Railway's build) and enable only mpm_prefork.
-RUN rm -f /etc/apache2/mods-enabled/mpm_event.load /etc/apache2/mods-enabled/mpm_event.conf \
-           /etc/apache2/mods-enabled/mpm_worker.load /etc/apache2/mods-enabled/mpm_worker.conf \
-    && a2enmod mpm_prefork rewrite
+# Fix MPM configuration:
+# 1. Disable event and worker modules cleanly
+# 2. Force remove all MPM load files from mods-enabled
+# 3. Create a single, explicit symlink for mpm_prefork
+RUN a2dismod mpm_event mpm_worker || true \
+    && rm -f /etc/apache2/mods-enabled/mpm_*.load /etc/apache2/mods-enabled/mpm_*.conf \
+    && ln -s /etc/apache2/mods-available/mpm_prefork.load /etc/apache2/mods-enabled/mpm_prefork.load \
+    && ln -s /etc/apache2/mods-available/mpm_prefork.conf /etc/apache2/mods-enabled/mpm_prefork.conf \
+    && a2enmod rewrite
 
-# App cod
-COPY . /var/www/html/
+# Application code setup
 WORKDIR /var/www/html
+COPY . /var/www/html/
 RUN chmod +x /var/www/html/entrypoint.sh
 
-# Railway assigns a dynamic $PORT at runtime — point Apache at it
+# Configure dynamic port binding for Railway
 RUN sed -i 's/80/${PORT}/g' /etc/apache2/ports.conf \
     && sed -i 's/:80/:${PORT}/g' /etc/apache2/sites-enabled/000-default.conf
 
-# Reasonable production PHP settings
+# Production PHP settings
 RUN { \
     echo 'display_errors=Off'; \
     echo 'log_errors=On'; \
