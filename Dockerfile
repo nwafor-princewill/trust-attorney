@@ -12,7 +12,7 @@ RUN a2enmod rewrite \
     && a2dismod mpm_event mpm_worker 2>/dev/null; \
     a2enmod mpm_prefork
 
-# App code
+# App cod
 COPY . /var/www/html/
 WORKDIR /var/www/html
 RUN chmod +x /var/www/html/entrypoint.sh
