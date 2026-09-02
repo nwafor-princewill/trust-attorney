@@ -1,6 +1,10 @@
 #!/bin/sh
 set -e
 
+# Debug: Find all active LoadModule mpm directives in Apache config
+echo "=== MPM Modules currently configured to load ==="
+grep -rn "LoadModule mpm_" /etc/apache2/
+
 # Railway names the database variable MYSQL_DATABASE (with underscore) while
 # the other MySQL vars have no underscore — support both spellings so this
 # works whichever the plugin gives us.
