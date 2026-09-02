@@ -16,10 +16,10 @@ WORKDIR /var/www/html
 COPY . /var/www/html/
 RUN chmod +x /var/www/html/entrypoint.sh
 
-# Configure dynamic PORT for Railway
-RUN sed -i 's/Listen 80/Listen ${PORT}/g' /etc/apache2/ports.conf \
-    && sed -i 's/:80/:${PORT}/g' /etc/apache2/sites-enabled/000-default.conf \
-    && echo "Listen ${PORT}" >> /etc/apache2/ports.conf
+# Configure dynamic PORT for Railway - FIXED
+# Use sed with proper escaping and default port
+RUN sed -i 's/^Listen 80$/Listen 8080/' /etc/apache2/ports.conf \
+    && sed -i 's/:80>/:${PORT}>/g' /etc/apache2/sites-enabled/000-default.conf
 
 # PHP configuration
 RUN { \
@@ -28,6 +28,12 @@ RUN { \
     echo 'upload_max_filesize=10M'; \
     echo 'post_max_size=10M'; \
   } > /usr/local/etc/php/conf.d/app.ini
+
+# Create a wrapper to replace PORT at runtime
+RUN echo '#!/bin/sh' > /usr/local/bin/start-apache.sh \
+    && echo 'sed -i "s/^Listen 8080$/Listen ${PORT:-8080}/" /etc/apache2/ports.conf' >> /usr/local/bin/start-apache.sh \
+    && echo 'exec apache2-foreground' >> /usr/local/bin/start-apache.sh \
+    && chmod +x /usr/local/bin/start-apache.sh
 
 EXPOSE 8080
 ENV PORT=8080

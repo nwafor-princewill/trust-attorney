@@ -1,6 +1,11 @@
 #!/bin/sh
 set -e
 
+# Fix ports.conf at runtime (replaces the build-time placeholder)
+echo "=== Setting up Apache port configuration ==="
+sed -i "s/^Listen 8080$/Listen ${PORT:-8080}/" /etc/apache2/ports.conf
+echo "Port set to: ${PORT:-8080}"
+
 # Debug: Show which MPM modules are enabled
 echo "=== Currently enabled MPM modules ==="
 ls -la /etc/apache2/mods-enabled/ | grep mpm || echo "No MPM modules found in mods-enabled"
@@ -10,8 +15,7 @@ a2dismod mpm_event mpm_worker mpm_prefork 2>/dev/null || true
 a2enmod mpm_prefork
 
 # Railway names the database variable MYSQL_DATABASE (with underscore) while
-# the other MySQL vars have no underscore — support both spellings so this
-# works whichever the plugin gives us.
+# the other MySQL vars have no underscore — support both spellings
 DBNAME="${MYSQL_DATABASE:-${MYSQLDATABASE:-}}"
 
 # Use the correct variable names from Railway
@@ -40,4 +44,6 @@ fi
 echo "=== MPM configuration after cleanup ==="
 apache2ctl -M | grep mpm
 
-exec apache2-foreground
+echo "=== Starting Apache ==="
+# Start Apache with the wrapper that sets PORT
+exec /usr/local/bin/start-apache.sh
