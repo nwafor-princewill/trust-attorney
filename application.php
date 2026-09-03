@@ -1,7 +1,11 @@
 <?php
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/includes/countries.php';
+
 $user = current_user();
 $errors = [];
+$countriesData = countries_with_states();
+$countryList = all_countries();
 
 $entityLabels = [
     'LLC' => 'Limited Liability Company (LLC)',
@@ -9,31 +13,67 @@ $entityLabels = [
     'CLOSE_LLC' => 'Close LLC',
     'CLOSE_CORP' => 'Close Corporation',
 ];
+$formationStates = ['Wyoming','Delaware','Nevada','Texas','Florida'];
+
+$old = $_POST; // repopulate on validation error
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!$user) {
-        // Preserve the submitted data across the login redirect
-        $_SESSION['pending_application'] = $_POST;
-        header('Location: login.php?next=' . urlencode('application.php?resume=1'));
-        exit;
-    }
     if (!csrf_check()) {
-        $errors[] = 'Your session expired, please resubmit the form.';
+        $errors[] = 'Your session expired. Please resubmit the form.';
     } else {
+        $full_name = trim($_POST['full_name'] ?? ($user['full_name'] ?? ''));
+        $email = trim($_POST['email'] ?? ($user['email'] ?? ''));
+        $phone = trim($_POST['phone'] ?? '');
+        $street_address = trim($_POST['street_address'] ?? '');
+        $city = trim($_POST['city'] ?? '');
+        $country = trim($_POST['country'] ?? '');
+        $state_region = trim($_POST['state_region'] ?? '');
+        $ssn_last4 = trim($_POST['ssn_last4'] ?? '');
+        $password = $_POST['password'] ?? '';
+        $password_confirm = $_POST['password_confirm'] ?? '';
+
         $entity_type = $_POST['entity_type'] ?? '';
         $business_name = trim($_POST['business_name'] ?? '');
-        $state = trim($_POST['state'] ?? 'Wyoming');
-        $owner_name = trim($_POST['owner_name'] ?? $user['full_name']);
-        $owner_email = trim($_POST['owner_email'] ?? $user['email']);
-        $owner_phone = trim($_POST['owner_phone'] ?? '');
-        $address = trim($_POST['address'] ?? '');
+        $formation_state = $_POST['formation_state'] ?? 'Wyoming';
 
-        if (!isset($entityLabels[$entity_type]) || $business_name === '') {
-            $errors[] = 'Please complete all required fields before submitting.';
-        } else {
-            $stmt = db()->prepare('INSERT INTO applications (user_id, entity_type, business_name, state, owner_name, owner_email, owner_phone, address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-            $stmt->execute([$user['id'], $entity_type, $business_name, $state, $owner_name, $owner_email, $owner_phone, $address]);
-            unset($_SESSION['pending_application']);
+        // --- validation ---
+        if ($full_name === '' || $email === '' || $country === '' || $business_name === '' || !isset($entityLabels[$entity_type])) {
+            $errors[] = 'Please complete all required fields marked with *.';
+        }
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $errors[] = 'Please enter a valid email address.';
+        }
+        if ($country === 'United States' && $ssn_last4 !== '' && !preg_match('/^\d{4}$/', $ssn_last4)) {
+            $errors[] = 'Last 4 digits of SSN must be exactly 4 numbers.';
+        }
+        if (!$user) {
+            if (strlen($password) < 6) $errors[] = 'Password must be at least 6 characters.';
+            if ($password !== $password_confirm) $errors[] = 'Passwords do not match.';
+            if (!$errors) {
+                $stmt = db()->prepare('SELECT id FROM users WHERE email = ?');
+                $stmt->execute([$email]);
+                if ($stmt->fetch()) $errors[] = 'An account with that email already exists. Please log in first.';
+            }
+        }
+
+        if (!$errors) {
+            $idDocPath = handle_id_upload('id_document', $user['id_document_path'] ?? null);
+
+            if ($user) {
+                $stmt = db()->prepare('UPDATE users SET full_name=?, phone=?, street_address=?, city=?, country=?, state_region=?, ssn_last4=?, id_document_path=? WHERE id=?');
+                $stmt->execute([$full_name, $phone, $street_address, $city, $country, $state_region, $ssn_last4 ?: null, $idDocPath, $user['id']]);
+                $userId = $user['id'];
+            } else {
+                $hash = password_hash($password, PASSWORD_BCRYPT);
+                $stmt = db()->prepare('INSERT INTO users (full_name, email, password_hash, phone, street_address, city, country, state_region, ssn_last4, id_document_path) VALUES (?,?,?,?,?,?,?,?,?,?)');
+                $stmt->execute([$full_name, $email, $hash, $phone, $street_address, $city, $country, $state_region, $ssn_last4 ?: null, $idDocPath]);
+                $userId = (int) db()->lastInsertId();
+                $_SESSION['user_id'] = $userId;
+            }
+
+            $stmt = db()->prepare('INSERT INTO applications (user_id, entity_type, business_name, state, owner_name, owner_email, owner_phone, address) VALUES (?,?,?,?,?,?,?,?)');
+            $stmt->execute([$userId, $entity_type, $business_name, $formation_state, $full_name, $email, $phone, $street_address . ($city ? ', ' . $city : '')]);
+
             flash_set('Application submitted! We will review it shortly.');
             header('Location: dashboard.php');
             exit;
@@ -41,156 +81,153 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Resume data after a login redirect
-$resumeData = [];
-if (!empty($_GET['resume']) && !empty($_SESSION['pending_application'])) {
-    $resumeData = $_SESSION['pending_application'];
-}
-$presetType = $_GET['type'] ?? ($resumeData['entity_type'] ?? 'LLC');
+$presetType = $_GET['type'] ?? ($old['entity_type'] ?? 'LLC');
 if (!isset($entityLabels[$presetType])) $presetType = 'LLC';
 
 $__base = '';
 $pageTitle = 'Start Your Application';
 require __DIR__ . '/includes/header.php';
 ?>
-<section class="section" style="padding-top:52px">
+<section class="section" style="padding-top:44px">
   <div class="container">
     <div class="section-head">
-      <h2>Choose Your Entity Type</h2>
-      <p>Select the business structure that best fits your operational and liability protection needs.</p>
+      <h2>Business Formation Application</h2>
+      <p>Complete your identity verification and business details below to get started.</p>
     </div>
 
     <?php foreach ($errors as $err): ?>
-      <div class="alert alert-error" style="max-width:640px;margin:0 auto 18px"><?= e($err) ?></div>
+      <div class="alert alert-error" style="max-width:680px;margin:0 auto 18px"><?= e($err) ?></div>
     <?php endforeach; ?>
 
-    <form method="post" id="appForm">
+    <form method="post" enctype="multipart/form-data" id="appForm">
       <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-      <input type="hidden" name="entity_type" id="entity_type" value="<?= e($presetType) ?>">
+      <div class="form-card" style="max-width:680px">
 
-      <!-- Step 1: entity type -->
-      <div class="step-panel" data-step="1">
-        <div class="grid grid-2" style="max-width:900px;margin:0 auto 30px">
-          <?php foreach ($entityLabels as $key => $label):
-            $desc = [
-              'LLC' => 'Flexible business structure with simplified management and tax benefits. Perfect for small to medium businesses.',
-              'CCORP' => 'Traditional business structure ideal for raising capital, going public, and scaling operations globally.',
-              'CLOSE_LLC' => 'Unique to Decentralized Trust with the same asset protection, tax and privacy benefits as a regular LLC. Reduced requirements.',
-              'CLOSE_CORP' => 'Same asset protection, privacy and tax features as a Corporation, but with less maintenance.',
-            ][$key];
-          ?>
-          <div class="pick-card <?= $presetType === $key ? 'selected' : '' ?>" data-entity="<?= e($key) ?>" onclick="selectEntity('<?= e($key) ?>')">
-            <div class="check">&#10003;</div>
-            <h3><?= e($label) ?></h3>
-            <p><?= e($desc) ?></p>
-          </div>
-          <?php endforeach; ?>
-        </div>
-        <div style="text-align:center">
-          <button type="button" class="btn btn-primary" onclick="goStep(2)">Continue &rarr;</button>
-        </div>
-      </div>
+        <div class="section-label"><div class="n">1</div><h3>Personal Information</h3></div>
 
-      <!-- Step 2: business details -->
-      <div class="step-panel" data-step="2" style="display:none">
-        <div class="form-card">
-          <h3 style="margin-bottom:20px">Business &amp; Owner Details</h3>
-          <div class="field">
-            <label>Business Name *</label>
-            <input type="text" name="business_name" required placeholder="Acme Holdings LLC" value="<?= e($resumeData['business_name'] ?? '') ?>">
+        <div class="form-row-2">
+          <div class="field"><label>Full Name *</label>
+            <input type="text" name="full_name" required placeholder="John Smith" value="<?= e($old['full_name'] ?? $user['full_name'] ?? '') ?>">
           </div>
-          <div class="field">
-            <label>State of Formation</label>
-            <select name="state">
-              <?php foreach (['Wyoming','Delaware','Nevada','Texas','Florida'] as $st): ?>
-                <option <?= ($resumeData['state'] ?? 'Wyoming') === $st ? 'selected' : '' ?>><?= $st ?></option>
+          <div class="field"><label>Email *</label>
+            <input type="email" name="email" required placeholder="john@example.com" <?= $user ? 'readonly' : '' ?> value="<?= e($old['email'] ?? $user['email'] ?? '') ?>">
+          </div>
+        </div>
+
+        <div class="form-row-2">
+          <div class="field"><label>Phone *</label>
+            <input type="text" name="phone" required placeholder="(555) 123-4567" value="<?= e($old['phone'] ?? $user['phone'] ?? '') ?>">
+          </div>
+          <div class="field"><label>Street Address *</label>
+            <input type="text" name="street_address" required placeholder="123 Main St" value="<?= e($old['street_address'] ?? $user['street_address'] ?? '') ?>">
+          </div>
+        </div>
+
+        <div class="form-row-2">
+          <div class="field"><label>City *</label>
+            <input type="text" name="city" required placeholder="Cheyenne" value="<?= e($old['city'] ?? $user['city'] ?? '') ?>">
+          </div>
+          <div class="field"><label>Country *</label>
+            <select name="country" id="country" required onchange="onCountryChange()">
+              <option value="">Select country&hellip;</option>
+              <?php $selCountry = $old['country'] ?? $user['country'] ?? ''; foreach ($countryList as $c): ?>
+                <option value="<?= e($c) ?>" <?= $selCountry === $c ? 'selected' : '' ?>><?= e($c) ?></option>
               <?php endforeach; ?>
             </select>
           </div>
-          <div class="form-row-2">
-            <div class="field">
-              <label>Owner Full Name *</label>
-              <input type="text" name="owner_name" required value="<?= e($resumeData['owner_name'] ?? ($user['full_name'] ?? '')) ?>">
-            </div>
-            <div class="field">
-              <label>Owner Email *</label>
-              <input type="email" name="owner_email" required value="<?= e($resumeData['owner_email'] ?? ($user['email'] ?? '')) ?>">
-            </div>
-          </div>
-          <div class="form-row-2">
-            <div class="field">
-              <label>Owner Phone</label>
-              <input type="text" name="owner_phone" value="<?= e($resumeData['owner_phone'] ?? '') ?>">
-            </div>
-            <div class="field">
-              <label>Mailing Address</label>
-              <input type="text" name="address" value="<?= e($resumeData['address'] ?? '') ?>">
-            </div>
-          </div>
-          <div style="display:flex;justify-content:space-between;margin-top:10px">
-            <button type="button" class="btn btn-outline" onclick="goStep(1)">&larr; Back</button>
-            <button type="button" class="btn btn-primary" onclick="reviewAndGo()">Review Application &rarr;</button>
-          </div>
         </div>
-      </div>
 
-      <!-- Step 3: review -->
-      <div class="step-panel" data-step="3" style="display:none">
-        <div class="form-card">
-          <h3 style="margin-bottom:20px">Review &amp; Submit</h3>
-          <div id="reviewBox"></div>
-          <?php if (!$user): ?>
-            <div class="alert alert-info" style="margin-top:20px">You'll be asked to log in or create a free account to submit your application.</div>
-          <?php endif; ?>
-          <div style="display:flex;justify-content:space-between;margin-top:20px">
-            <button type="button" class="btn btn-outline" onclick="goStep(2)">&larr; Back</button>
-            <button type="submit" class="btn btn-gold">Submit Application</button>
+        <div class="field" id="stateWrap">
+          <label>State / Province / Region</label>
+          <select name="state_region" id="state_region_select" style="display:none"></select>
+          <input type="text" name="state_region_text" id="state_region_text" placeholder="State / Province / Region" value="<?= e($old['state_region'] ?? $user['state_region'] ?? '') ?>">
+        </div>
+
+        <div class="field conditional-field" id="ssnField" style="display:none">
+          <label>Last 4 Digits of SSN <span style="color:var(--muted);font-weight:400">(U.S. citizens/residents only)</span></label>
+          <input type="text" name="ssn_last4" maxlength="4" pattern="\d{4}" placeholder="1234" value="<?= e($old['ssn_last4'] ?? $user['ssn_last4'] ?? '') ?>">
+          <div class="hint">Used for identity verification only. We never store your full SSN.</div>
+        </div>
+
+        <div class="field">
+          <label>Government-Issued ID Upload <?= $user && $user['id_document_path'] ? '' : '*' ?></label>
+          <input type="file" name="id_document" accept=".jpg,.jpeg,.png,.pdf" <?= ($user && $user['id_document_path']) ? '' : 'required' ?>>
+          <div class="hint">
+            <?php if ($user && $user['id_document_path']): ?>
+              A document is already on file. Upload a new one to replace it.
+            <?php else: ?>
+              JPG, PNG or PDF, up to 5MB.
+            <?php endif; ?>
           </div>
         </div>
+
+        <?php if (!$user): ?>
+        <div class="form-row-2">
+          <div class="field"><label>Password *</label><input type="password" name="password" required placeholder="At least 6 characters"></div>
+          <div class="field"><label>Confirm Password *</label><input type="password" name="password_confirm" required></div>
+        </div>
+        <?php endif; ?>
+
+        <hr class="section-divider">
+
+        <div class="section-label"><div class="n">2</div><h3>Business Information</h3></div>
+
+        <div class="field">
+          <label>Business Name *</label>
+          <input type="text" name="business_name" required placeholder="Acme Holdings LLC" value="<?= e($old['business_name'] ?? '') ?>">
+        </div>
+
+        <div class="form-row-2">
+          <div class="field"><label>Formation State (Jurisdiction)</label>
+            <select name="formation_state">
+              <?php $selFs = $old['formation_state'] ?? 'Wyoming'; foreach ($formationStates as $st): ?>
+                <option <?= $selFs === $st ? 'selected' : '' ?>><?= $st ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+          <div class="field"><label>Entity Type *</label>
+            <select name="entity_type" required>
+              <?php foreach ($entityLabels as $key => $label): ?>
+                <option value="<?= e($key) ?>" <?= $presetType === $key ? 'selected' : '' ?>><?= e($label) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-gold btn-block" style="margin-top:10px">Submit Application</button>
+        <p style="text-align:center;font-size:13px;margin-top:14px">By submitting this form, you agree to our Terms of Service and Privacy Policy.</p>
       </div>
     </form>
   </div>
 </section>
 
 <script>
-const labels = <?= json_encode($entityLabels) ?>;
+const countryStates = <?= json_encode($countriesData) ?>;
+const selectedState = <?= json_encode($old['state_region'] ?? $user['state_region'] ?? '') ?>;
 
-function selectEntity(key) {
-  document.getElementById('entity_type').value = key;
-  document.querySelectorAll('.pick-card').forEach(c => c.classList.toggle('selected', c.dataset.entity === key));
-}
+function onCountryChange() {
+  const country = document.getElementById('country').value;
+  const select = document.getElementById('state_region_select');
+  const text = document.getElementById('state_region_text');
+  const ssnField = document.getElementById('ssnField');
 
-function goStep(n) {
-  document.querySelectorAll('.step-panel').forEach(p => p.style.display = (p.dataset.step == n) ? '' : 'none');
-  window.scrollTo({top: 0, behavior: 'smooth'});
-}
-
-function reviewAndGo() {
-  const f = document.getElementById('appForm');
-  if (!f.business_name.value.trim() || !f.owner_name.value.trim() || !f.owner_email.value.trim()) {
-    alert('Please fill in the required fields marked with *.');
-    return;
+  if (countryStates[country]) {
+    select.innerHTML = '<option value="">Select state/province&hellip;</option>' +
+      countryStates[country].map(s => `<option value="${s}" ${s === selectedState ? 'selected' : ''}>${s}</option>`).join('');
+    select.style.display = '';
+    select.name = 'state_region';
+    text.style.display = 'none';
+    text.name = 'state_region_text';
+  } else {
+    select.style.display = 'none';
+    select.name = 'state_region_select_unused';
+    text.style.display = '';
+    text.name = 'state_region';
   }
-  const type = document.getElementById('entity_type').value;
-  const rows = [
-    ['Entity Type', labels[type]],
-    ['Business Name', f.business_name.value],
-    ['State of Formation', f.state.value],
-    ['Owner Name', f.owner_name.value],
-    ['Owner Email', f.owner_email.value],
-    ['Owner Phone', f.owner_phone.value || '—'],
-    ['Mailing Address', f.address.value || '—'],
-  ];
-  document.getElementById('reviewBox').innerHTML = rows.map(r =>
-    `<div class="review-row"><span class="k">${r[0]}</span><span class="v">${r[1]}</span></div>`
-  ).join('');
-  goStep(3);
-}
 
-<?php if (!empty($resumeData)): ?>
-  // Data was preserved across a login redirect — jump straight to review
-  window.addEventListener('DOMContentLoaded', () => { reviewAndGo(); });
-<?php endif; ?>
+  ssnField.style.display = (country === 'United States') ? '' : 'none';
+}
+document.addEventListener('DOMContentLoaded', onCountryChange);
 </script>
 
 <?php require __DIR__ . '/includes/footer.php'; ?>

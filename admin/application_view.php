@@ -3,7 +3,7 @@ require_once __DIR__ . '/../auth.php';
 require_admin();
 
 $id = (int) ($_GET['id'] ?? 0);
-$stmt = db()->prepare('SELECT a.*, u.full_name AS user_name, u.email AS user_email, u.phone AS user_phone FROM applications a JOIN users u ON u.id = a.user_id WHERE a.id = ?');
+$stmt = db()->prepare('SELECT a.*, u.full_name AS user_name, u.email AS user_email, u.phone AS user_phone, u.country AS user_country, u.state_region AS user_state_region, u.ssn_last4 AS user_ssn_last4, u.id_document_path AS user_id_document_path FROM applications a JOIN users u ON u.id = a.user_id WHERE a.id = ?');
 $stmt->execute([$id]);
 $app = $stmt->fetch();
 if (!$app) { flash_set('Application not found.', 'error'); header('Location: applications.php'); exit; }
@@ -45,6 +45,19 @@ require __DIR__ . '/includes/header.php';
     <div><div class="k">Mailing Address</div><div class="v"><?= e($app['address'] ?: '—') ?></div></div>
     <div><div class="k">Submitted</div><div class="v"><?= e(date('M j, Y g:ia', strtotime($app['created_at']))) ?></div></div>
     <div><div class="k">Last Updated</div><div class="v"><?= e(date('M j, Y g:ia', strtotime($app['updated_at']))) ?></div></div>
+  </div>
+</div>
+
+<div class="panel" style="margin-bottom:24px">
+  <h3 style="margin-bottom:16px">Identity Verification</h3>
+  <div class="detail-grid">
+    <div><div class="k">Country / Region</div><div class="v"><?= e(trim(($app['user_country'] ?? '—') . ($app['user_state_region'] ? ', ' . $app['user_state_region'] : ''))) ?></div></div>
+    <div><div class="k">SSN (last 4)</div><div class="v"><?= $app['user_ssn_last4'] ? '••• ' . e($app['user_ssn_last4']) : '—' ?></div></div>
+    <div><div class="k">ID Document</div><div class="v">
+      <?php if ($app['user_id_document_path']): ?>
+        <a href="../<?= e($app['user_id_document_path']) ?>" target="_blank" class="btn btn-outline btn-sm">View Uploaded ID</a>
+      <?php else: ?> Not uploaded <?php endif; ?>
+    </div></div>
   </div>
 </div>
 

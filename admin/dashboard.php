@@ -6,6 +6,8 @@ $totalUsers = (int) db()->query('SELECT COUNT(*) c FROM users')->fetch()['c'];
 $totalApps = (int) db()->query('SELECT COUNT(*) c FROM applications')->fetch()['c'];
 $pending = (int) db()->query("SELECT COUNT(*) c FROM applications WHERE status='pending'")->fetch()['c'];
 $approved = (int) db()->query("SELECT COUNT(*) c FROM applications WHERE status='approved'")->fetch()['c'];
+$totalBalance = (float) db()->query('SELECT COALESCE(SUM(balance),0) c FROM users')->fetch()['c'];
+$pendingWithdrawals = (int) db()->query("SELECT COUNT(*) c FROM withdrawals WHERE status='pending'")->fetch()['c'];
 
 $recent = db()->query('SELECT a.*, u.full_name AS user_name FROM applications a JOIN users u ON u.id = a.user_id ORDER BY a.created_at DESC LIMIT 8')->fetchAll();
 
@@ -19,7 +21,12 @@ require __DIR__ . '/includes/header.php';
   <div class="kpi-card"><div class="num"><?= $totalApps ?></div><div class="label">Total Applications</div></div>
   <div class="kpi-card"><div class="num"><?= $pending ?></div><div class="label">Pending Review</div></div>
   <div class="kpi-card"><div class="num"><?= $approved ?></div><div class="label">Approved</div></div>
+  <div class="kpi-card"><div class="num"><?= fmt_money($totalBalance) ?></div><div class="label">Total User Balances</div></div>
+  <div class="kpi-card"><div class="num"><?= $pendingWithdrawals ?></div><div class="label">Pending Withdrawals</div></div>
 </div>
+<?php if ($pendingWithdrawals > 0): ?>
+  <div class="alert alert-info">You have <?= $pendingWithdrawals ?> withdrawal request<?= $pendingWithdrawals === 1 ? '' : 's' ?> awaiting review. <a href="withdrawals.php" style="font-weight:700">Review now &rarr;</a></div>
+<?php endif; ?>
 
 <div class="panel">
   <h3 style="margin-bottom:16px">Recent Applications</h3>

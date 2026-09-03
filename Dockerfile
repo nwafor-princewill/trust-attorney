@@ -11,10 +11,18 @@ RUN a2dismod mpm_event mpm_worker mpm_prefork \
     && a2enmod mpm_prefork \
     && a2enmod rewrite
 
+# Allow .htaccess files to actually take effect (uploads/.htaccess and the
+# root .htaccess both rely on this — Debian's default is AllowOverride None)
+RUN sed -i '/<Directory \/var\/www\/>/,/<\/Directory>/ s/AllowOverride None/AllowOverride All/' /etc/apache2/apache2.conf
+
 # Setup directory and application files
 WORKDIR /var/www/html
 COPY . /var/www/html/
 RUN chmod +x /var/www/html/entrypoint.sh
+
+# Uploaded ID documents need to be writable by the user Apache runs as
+RUN mkdir -p /var/www/html/uploads/ids \
+    && chown -R www-data:www-data /var/www/html/uploads
 
 # Configure dynamic PORT for Railway - FIXED
 # Use sed with proper escaping and default port

@@ -1,5 +1,7 @@
--- Decentralized Trust Attorneys - Demo Schema
+-- Decentralized Trust Attorneys - Demo Schema (v2)
 -- Import this file via cPanel > phpMyAdmin (select your DB, then Import)
+-- If you already imported v1 on a live site, use sql/migration_v2.sql instead
+-- so you don't lose existing users/applications.
 
 CREATE TABLE IF NOT EXISTS users (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -7,6 +9,13 @@ CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(150) NOT NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,
   phone VARCHAR(30) DEFAULT NULL,
+  street_address VARCHAR(255) DEFAULT NULL,
+  city VARCHAR(100) DEFAULT NULL,
+  country VARCHAR(100) DEFAULT NULL,
+  state_region VARCHAR(100) DEFAULT NULL,
+  ssn_last4 CHAR(4) DEFAULT NULL,
+  id_document_path VARCHAR(255) DEFAULT NULL,
+  balance DECIMAL(18,2) NOT NULL DEFAULT 0.00,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -25,6 +34,19 @@ CREATE TABLE IF NOT EXISTS applications (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_app_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS withdrawals (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  amount DECIMAL(18,2) NOT NULL,
+  method VARCHAR(50) NOT NULL DEFAULT 'crypto',
+  wallet_address VARCHAR(255) DEFAULT NULL,
+  status ENUM('pending','approved','declined') NOT NULL DEFAULT 'pending',
+  admin_notes TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_wd_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS admins (
