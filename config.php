@@ -42,6 +42,11 @@ define('SMTP_SECURE', env_or('SMTP_SECURE', 'tls')); // 'tls' or 'ssl'
 define('SMTP_FROM', env_or('SMTP_FROM', 'no-reply@decenttrustattorneys.com'));
 define('SMTP_FROM_NAME', env_or('SMTP_FROM_NAME', 'Decentralized Trust Attorneys'));
 
+// Brevo API key (used by includes/mailer.php instead of SMTP — see that
+// file for why). Generate this in Brevo: SMTP & API > API Keys > Generate
+// a new API key. Different from the SMTP key.
+define('BREVO_API_KEY', env_or('BREVO_API_KEY', ''));
+
 // ---- Site settings ----
 define('SITE_NAME', 'Decentralized Trust Attorneys');
 define('SITE_URL', env_or('SITE_URL', 'https://decenttrustattorneys.com')); // update to your live domain

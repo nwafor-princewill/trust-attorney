@@ -1,55 +1,66 @@
 <?php
 /**
  * Lightweight email sender used across the site (welcome emails, application
- * status updates, withdrawal/wallet confirmations). Uses PHPMailer over SMTP
- * so it works on Railway (no local mail server) as well as cPanel.
+ * status updates, withdrawal/wallet confirmations).
  *
- * If SMTP_HOST hasn't been configured yet, send_email() just returns false
- * and logs a note — it never throws or breaks the page that called it.
+ * Sends via Brevo's HTTPS Transactional Email API instead of SMTP — Railway
+ * (and most cloud hosts on their free/hobby tiers) blocks outbound SMTP
+ * ports (25/465/587) entirely, so PHPMailer-over-SMTP hangs and times out.
+ * A plain HTTPS POST request is not affected by that block at all.
+ *
+ * Needs a Brevo API key set as the BREVO_API_KEY environment variable
+ * (Brevo dashboard > SMTP & API > API Keys > Generate a new API key —
+ * different from the SMTP key you may have generated earlier).
+ *
+ * If BREVO_API_KEY hasn't been configured yet, send_email() just returns
+ * false and logs a note — it never throws or breaks the page that called it.
  */
 
-require_once __DIR__ . '/PHPMailer/Exception.php';
-require_once __DIR__ . '/PHPMailer/PHPMailer.php';
-require_once __DIR__ . '/PHPMailer/SMTP.php';
-
-use PHPMailer\PHPMailer\PHPMailer;
-use PHPMailer\PHPMailer\Exception as PHPMailerException;
-
 /**
- * Send an HTML email. Returns true on success, false if SMTP isn't
+ * Send an HTML email. Returns true on success, false if the API key isn't
  * configured yet or sending failed (never throws).
  */
 function send_email(string $toEmail, string $toName, string $subject, string $htmlBody): bool {
-    if (SMTP_HOST === '') {
-        error_log('[mailer] SMTP_HOST not set — skipped email "' . $subject . '" to ' . $toEmail);
+    $apiKey = defined('BREVO_API_KEY') ? BREVO_API_KEY : '';
+    if ($apiKey === '') {
+        error_log('[mailer] BREVO_API_KEY not set — skipped email "' . $subject . '" to ' . $toEmail);
         return false;
     }
-    $mail = new PHPMailer(true);
-    try {
-        $mail->isSMTP();
-        $mail->Host       = SMTP_HOST;
-        $mail->SMTPAuth   = true;
-        $mail->Username   = SMTP_USER;
-        $mail->Password   = SMTP_PASS;
-        $mail->SMTPSecure = SMTP_SECURE === 'ssl' ? PHPMailer::ENCRYPTION_SMTPS : PHPMailer::ENCRYPTION_STARTTLS;
-        $mail->Port       = SMTP_PORT;
 
-        $mail->setFrom(SMTP_FROM, SMTP_FROM_NAME);
-        $mail->addAddress($toEmail, $toName);
-        $mail->isHTML(true);
-        $mail->Subject = $subject;
-        $mail->Body    = email_wrap($subject, $htmlBody);
-        $mail->AltBody = strip_tags(str_replace(['<br>', '<br/>', '<br />', '</p>'], "\n", $htmlBody));
+    $payload = [
+        'sender'      => ['email' => SMTP_FROM, 'name' => SMTP_FROM_NAME],
+        'to'          => [['email' => $toEmail, 'name' => $toName]],
+        'subject'     => $subject,
+        'htmlContent' => email_wrap($subject, $htmlBody),
+        'textContent' => strip_tags(str_replace(['<br>', '<br/>', '<br />', '</p>'], "\n", $htmlBody)),
+    ];
 
-        $mail->send();
+    $ch = curl_init('https://api.brevo.com/v3/smtp/email');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => json_encode($payload),
+        CURLOPT_HTTPHEADER     => [
+            'accept: application/json',
+            'content-type: application/json',
+            'api-key: ' . $apiKey,
+        ],
+        CURLOPT_TIMEOUT        => 15,
+    ]);
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlErr  = curl_error($ch);
+    curl_close($ch);
+
+    if ($curlErr) {
+        error_log('[mailer] cURL error sending to ' . $toEmail . ': ' . $curlErr);
+        return false;
+    }
+    if ($httpCode >= 200 && $httpCode < 300) {
         return true;
-    } catch (PHPMailerException $e) {
-        error_log('[mailer] send failed to ' . $toEmail . ': ' . $mail->ErrorInfo);
-        return false;
-    } catch (\Throwable $e) {
-        error_log('[mailer] unexpected error: ' . $e->getMessage());
-        return false;
     }
+    error_log('[mailer] Brevo API send failed to ' . $toEmail . ' (HTTP ' . $httpCode . '): ' . $response);
+    return false;
 }
 
 /** Wraps inner HTML in a simple branded email shell. */
