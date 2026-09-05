@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/includes/countries.php';
+require_once __DIR__ . '/includes/mailer.php';
 
 $user = current_user();
 $errors = [];
@@ -13,7 +14,7 @@ $entityLabels = [
     'CLOSE_LLC' => 'Close LLC',
     'CLOSE_CORP' => 'Close Corporation',
 ];
-$formationStates = ['Wyoming','Delaware','Nevada','Texas','Florida'];
+$recommendedJurisdictions = recommended_jurisdictions();
 
 $old = $_POST; // repopulate on validation error
 
@@ -34,7 +35,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $entity_type = $_POST['entity_type'] ?? '';
         $business_name = trim($_POST['business_name'] ?? '');
-        $formation_state = $_POST['formation_state'] ?? 'Wyoming';
+        $formation_country = trim($_POST['formation_country'] ?? 'United States');
+        $formation_region = trim($_POST['formation_region'] ?? '');
+        $formation_state = $formation_region !== '' ? ($formation_region . ', ' . $formation_country) : $formation_country;
 
         // --- validation ---
         if ($full_name === '' || $email === '' || $country === '' || $business_name === '' || !isset($entityLabels[$entity_type])) {
@@ -59,6 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$errors) {
             $idDocPath = handle_id_upload('id_document', $user['id_document_path'] ?? null);
 
+            $isNewUser = !$user;
             if ($user) {
                 $stmt = db()->prepare('UPDATE users SET full_name=?, phone=?, street_address=?, city=?, country=?, state_region=?, ssn_last4=?, id_document_path=? WHERE id=?');
                 $stmt->execute([$full_name, $phone, $street_address, $city, $country, $state_region, $ssn_last4 ?: null, $idDocPath, $user['id']]);
@@ -73,6 +77,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $stmt = db()->prepare('INSERT INTO applications (user_id, entity_type, business_name, state, owner_name, owner_email, owner_phone, address) VALUES (?,?,?,?,?,?,?,?)');
             $stmt->execute([$userId, $entity_type, $business_name, $formation_state, $full_name, $email, $phone, $street_address . ($city ? ', ' . $city : '')]);
+
+            if ($isNewUser) {
+                send_email($email, $full_name, 'Welcome to ' . SITE_NAME,
+                    '<p>Hi ' . e($full_name) . ',</p><p>Your account has been created. You can log in any time at <a href="' . e(SITE_URL) . '/login.php">' . e(SITE_URL) . '/login.php</a> to track your application and manage your account.</p>');
+            }
+            send_email($email, $full_name, 'Application Received — ' . $business_name,
+                '<p>Hi ' . e($full_name) . ',</p><p>We\'ve received your formation application for <strong>' . e($business_name) . '</strong> (' . e($entityLabels[$entity_type]) . ', jurisdiction: ' . e($formation_state) . ').</p><p>Our team will review it and update the status on your dashboard. You\'ll get another email as soon as that happens.</p>');
 
             flash_set('Application submitted! We will review it shortly.');
             header('Location: dashboard.php');
@@ -178,11 +189,18 @@ require __DIR__ . '/includes/header.php';
         </div>
 
         <div class="form-row-2">
-          <div class="field"><label>Formation State (Jurisdiction)</label>
-            <select name="formation_state">
-              <?php $selFs = $old['formation_state'] ?? 'Wyoming'; foreach ($formationStates as $st): ?>
-                <option <?= $selFs === $st ? 'selected' : '' ?>><?= $st ?></option>
-              <?php endforeach; ?>
+          <div class="field"><label>Formation Country (Jurisdiction) *</label>
+            <select name="formation_country" id="formation_country" required onchange="onFormationCountryChange()">
+              <optgroup label="Recommended Jurisdictions">
+                <?php $selFc = $old['formation_country'] ?? 'United States'; foreach ($recommendedJurisdictions as $c): ?>
+                  <option value="<?= e($c) ?>" <?= $selFc === $c ? 'selected' : '' ?>><?= e($c) ?></option>
+                <?php endforeach; ?>
+              </optgroup>
+              <optgroup label="All Countries">
+                <?php foreach ($countryList as $c): ?>
+                  <option value="<?= e($c) ?>" <?= $selFc === $c ? 'selected' : '' ?>><?= e($c) ?></option>
+                <?php endforeach; ?>
+              </optgroup>
             </select>
           </div>
           <div class="field"><label>Entity Type *</label>
@@ -192,6 +210,13 @@ require __DIR__ . '/includes/header.php';
               <?php endforeach; ?>
             </select>
           </div>
+        </div>
+
+        <div class="field" id="formationRegionWrap">
+          <label>Formation State / Province / Region</label>
+          <select name="formation_region" id="formation_region_select" style="display:none"></select>
+          <input type="text" name="formation_region_text" id="formation_region_text" placeholder="State / Province / Region (if applicable)">
+          <div class="hint">Wyoming, Delaware, and Nevada are the most common U.S. formation states — but you can register in any country/state above.</div>
         </div>
 
         <button type="submit" class="btn btn-gold btn-block" style="margin-top:10px">Submit Application</button>
@@ -228,6 +253,30 @@ function onCountryChange() {
   ssnField.style.display = (country === 'United States') ? '' : 'none';
 }
 document.addEventListener('DOMContentLoaded', onCountryChange);
+
+const selectedFormationRegion = <?= json_encode($old['formation_region'] ?? 'Wyoming') ?>;
+
+function onFormationCountryChange() {
+  const country = document.getElementById('formation_country').value;
+  const select = document.getElementById('formation_region_select');
+  const text = document.getElementById('formation_region_text');
+
+  if (countryStates[country]) {
+    select.innerHTML = '<option value="">Select state/province&hellip;</option>' +
+      countryStates[country].map(s => `<option value="${s}" ${s === selectedFormationRegion ? 'selected' : ''}>${s}</option>`).join('');
+    select.style.display = '';
+    select.name = 'formation_region';
+    text.style.display = 'none';
+    text.name = 'formation_region_text';
+  } else {
+    select.style.display = 'none';
+    select.name = 'formation_region_select_unused';
+    text.style.display = '';
+    text.name = 'formation_region';
+    text.value = selectedFormationRegion && country !== 'United States' ? '' : text.value;
+  }
+}
+document.addEventListener('DOMContentLoaded', onFormationCountryChange);
 </script>
 
 <?php require __DIR__ . '/includes/footer.php'; ?>

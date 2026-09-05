@@ -1,11 +1,12 @@
 <?php
 require_once __DIR__ . '/../auth.php';
 require_admin();
+require_once __DIR__ . '/../includes/mailer.php';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && csrf_check()) {
     $id = (int) ($_POST['id'] ?? 0);
     $decision = $_POST['decision'] ?? '';
-    $stmt = db()->prepare('SELECT * FROM withdrawals WHERE id = ?');
+    $stmt = db()->prepare('SELECT w.*, u.full_name, u.email FROM withdrawals w JOIN users u ON u.id = w.user_id WHERE w.id = ?');
     $stmt->execute([$id]);
     $wd = $stmt->fetch();
 
@@ -30,6 +31,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && csrf_check()) {
             $stmt->execute([$decision, $id]);
             db()->commit();
             flash_set('Withdrawal ' . $decision . '.');
+            $subject = $decision === 'approved' ? 'Withdrawal Approved' : 'Withdrawal Declined';
+            $body = $decision === 'approved'
+                ? '<p>Hi ' . e($wd['full_name']) . ',</p><p>Your withdrawal request for <strong>' . fmt_money((float) $wd['amount']) . '</strong> has been approved and processed.</p>'
+                : '<p>Hi ' . e($wd['full_name']) . ',</p><p>Your withdrawal request for <strong>' . fmt_money((float) $wd['amount']) . '</strong> was declined. Contact support if you have questions.</p>';
+            send_email($wd['email'], $wd['full_name'], $subject, $body);
         } catch (Exception $e) {
             db()->rollBack();
             flash_set('Something went wrong processing this request.', 'error');

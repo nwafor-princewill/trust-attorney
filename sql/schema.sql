@@ -16,7 +16,22 @@ CREATE TABLE IF NOT EXISTS users (
   ssn_last4 CHAR(4) DEFAULT NULL,
   id_document_path VARCHAR(255) DEFAULT NULL,
   balance DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+  wallet_address VARCHAR(64) DEFAULT NULL,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS transactions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  type ENUM('send','receive','swap','buy','admin_credit','admin_debit') NOT NULL,
+  asset VARCHAR(20) NOT NULL DEFAULT 'USD',
+  amount_usd DECIMAL(18,2) NOT NULL,
+  counter_asset VARCHAR(20) DEFAULT NULL,
+  destination VARCHAR(255) DEFAULT NULL,
+  note VARCHAR(255) DEFAULT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'completed',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_tx_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS applications (

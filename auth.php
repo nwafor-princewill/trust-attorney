@@ -5,7 +5,7 @@ function current_user(): ?array {
     if (empty($_SESSION['user_id'])) return null;
     static $cache = null;
     if ($cache !== null) return $cache;
-    $stmt = db()->prepare('SELECT id, full_name, email, phone, street_address, city, country, state_region, ssn_last4, id_document_path, balance, created_at FROM users WHERE id = ?');
+    $stmt = db()->prepare('SELECT id, full_name, email, phone, street_address, city, country, state_region, ssn_last4, id_document_path, balance, wallet_address, created_at FROM users WHERE id = ?');
     $stmt->execute([$_SESSION['user_id']]);
     $cache = $stmt->fetch() ?: null;
     return $cache;

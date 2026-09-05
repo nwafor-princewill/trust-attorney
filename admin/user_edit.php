@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/../auth.php';
 require_admin();
+require_once __DIR__ . '/../includes/wallet.php';
+require_once __DIR__ . '/../includes/mailer.php';
 
 $id = (int) ($_GET['id'] ?? 0);
 $stmt = db()->prepare('SELECT * FROM users WHERE id = ?');
@@ -19,6 +21,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && csrf_check()) {
         $delta = (float) ($_POST['delta'] ?? 0);
         $stmt = db()->prepare('UPDATE users SET balance = balance + ? WHERE id = ?');
         $stmt->execute([$delta, $id]);
+        log_transaction($id, $delta >= 0 ? 'admin_credit' : 'admin_debit', 'USD', abs($delta), null, null, 'Adjusted by admin');
+        send_email($u['email'], $u['full_name'], $delta >= 0 ? 'Deposit Received' : 'Balance Adjustment',
+            '<p>Hi ' . e($u['full_name']) . ',</p><p>Your wallet balance was ' . ($delta >= 0 ? 'credited' : 'debited') . ' by <strong>' . fmt_money(abs($delta)) . '</strong>.</p>');
         flash_set(($delta >= 0 ? 'Credited ' : 'Debited ') . fmt_money(abs($delta)) . '.');
     }
     header('Location: user_edit.php?id=' . $id);

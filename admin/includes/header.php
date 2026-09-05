@@ -23,6 +23,7 @@ function navclass($file, $current) { return $file === $current ? 'active' : ''; 
       <a href="applications.php" class="<?= navclass('applications.php', $current) ?>">&#128196; Applications</a>
       <a href="users.php" class="<?= navclass('users.php', $current) ?>">&#128101; Users</a>
       <a href="withdrawals.php" class="<?= navclass('withdrawals.php', $current) ?>">&#128176; Withdrawals</a>
+      <a href="transactions.php" class="<?= navclass('transactions.php', $current) ?>">&#128179; Wallet Transactions</a>
       <a href="logout.php" style="margin-top:20px;color:#f87171">&#8630; Log Out</a>
     </nav>
   </aside>

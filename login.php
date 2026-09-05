@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/includes/mailer.php';
 
 if (current_user()) { header('Location: dashboard.php'); exit; }
 
@@ -34,6 +35,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt = db()->prepare('INSERT INTO users (full_name, email, password_hash, phone) VALUES (?, ?, ?, ?)');
                 $stmt->execute([$full_name, $email, $hash, $phone]);
                 $_SESSION['user_id'] = (int) db()->lastInsertId();
+                send_email($email, $full_name, 'Welcome to ' . SITE_NAME,
+                    '<p>Hi ' . e($full_name) . ',</p><p>Your account has been created. You can log in any time at <a href="' . e(SITE_URL) . '/login.php">' . e(SITE_URL) . '/login.php</a> to start a business formation application and manage your account.</p>');
                 flash_set('Welcome, ' . $full_name . '! Your account has been created.');
                 header('Location: ' . $next);
                 exit;

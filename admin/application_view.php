@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../auth.php';
 require_admin();
+require_once __DIR__ . '/../includes/mailer.php';
 
 $id = (int) ($_GET['id'] ?? 0);
 $stmt = db()->prepare('SELECT a.*, u.full_name AS user_name, u.email AS user_email, u.phone AS user_phone, u.country AS user_country, u.state_region AS user_state_region, u.ssn_last4 AS user_ssn_last4, u.id_document_path AS user_id_document_path FROM applications a JOIN users u ON u.id = a.user_id WHERE a.id = ?');
@@ -15,6 +16,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && csrf_check()) {
     if (in_array($status, $validStatuses, true)) {
         $stmt = db()->prepare('UPDATE applications SET status = ?, admin_notes = ? WHERE id = ?');
         $stmt->execute([$status, $notes, $id]);
+        if ($status !== $app['status']) {
+            $statusLabels = ['pending' => 'Pending Review', 'in_review' => 'In Review', 'approved' => 'Approved', 'rejected' => 'Rejected'];
+            send_email($app['user_email'], $app['user_name'], 'Application Update — ' . $app['business_name'],
+                '<p>Hi ' . e($app['user_name']) . ',</p><p>The status of your application for <strong>' . e($app['business_name']) . '</strong> has changed to <strong>' . e($statusLabels[$status] ?? $status) . '</strong>.</p>' . ($notes ? '<p>Note from our team: ' . nl2br(e($notes)) . '</p>' : '') . '<p>Log in to your dashboard for full details.</p>');
+        }
         flash_set('Application updated.');
         header('Location: application_view.php?id=' . $id);
         exit;
